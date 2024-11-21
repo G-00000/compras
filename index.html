@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lista de Compras</title>
+    <style>
+        /* Estilos Gerais */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #FFFAF0; /* Fundo quente */
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #D2691E; /* Chocolate */
+            margin-bottom: 20px;
+        }
+
+        /* Container Principal */
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Lista de Compras */
+        #shoppingList {
+            list-style: none;
+            padding: 0;
+        }
+
+        #shoppingList li {
+            background-color: #FFF8DC; /* Cornsilk */
+            margin-bottom: 10px;
+            padding: 15px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        #shoppingList li.feito {
+            background-color: #E6E6FA; /* Lavender */
+            text-decoration: line-through;
+            color: #808080; /* Cinza */
+        }
+
+        /* Botões */
+        .btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-left: 5px;
+        }
+
+        .btn.delete {
+            background-color: #FF6347; /* Tomate */
+            color: white;
+        }
+
+        .btn.delete:hover {
+            background-color: #FF4500; /* Laranja Avermelhado */
+        }
+
+        /* Adicionar Item */
+        .add-item {
+            display: flex;
+            margin-bottom: 20px;
+        }
+
+        .add-item input {
+            flex: 1;
+            padding: 10px;
+            font-size: 16px;
+            border: 2px solid #D2691E;
+            border-radius: 3px 0 0 3px;
+            outline: none;
+        }
+
+        .add-item button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: 2px solid #D2691E;
+            border-left: none;
+            background-color: #FFA07A; /* Light Salmon */
+            color: white;
+            border-radius: 0 3px 3px 0;
+            cursor: pointer;
+        }
+
+        .add-item button:hover {
+            background-color: #FF7F50; /* Coral */
+        }
+
+        /* Responsividade */
+        @media (max-width: 600px) {
+            .add-item input, .add-item button {
+                font-size: 14px;
+                padding: 8px;
+            }
+
+            .btn {
+                font-size: 14px;
+                padding: 6px 10px;
+            }
+        }
+
+        /* Botões de Login/Logout */
+        .login-btn {
+            display: block;
+            margin: 0 auto 20px auto;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #D2691E; /* Chocolate */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .login-btn:hover {
+            background-color: #B22222; /* Firebrick */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Lista de Compras</h1>
+        
+        <!-- Botões de Login/Logout -->
+        <button id="authorize_button" class="login-btn">Entrar</button>
+        <button id="signout_button" class="login-btn" style="display: none;">Sair</button>
+
+        <!-- Adicionar Novo Item -->
+        <div class="add-item" style="display: none;">
+            <input type="text" id="newItemInput" placeholder="Adicionar novo item...">
+            <button onclick="addItem()">Adicionar</button>
+        </div>
+
+        <!-- Lista de Compras -->
+        <ul id="shoppingList" style="display: none;">
+            <!-- Itens serão adicionados aqui dinamicamente -->
+        </ul>
+    </div>
+
+    <!-- Biblioteca da API do Google -->
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script>
+        // Configurações
+        const CLIENT_ID = 'YOUR_OAUTH_CLIENT_ID'; // Substituir pelo teu Client ID
+        const API_KEY = 'YOUR_API_KEY'; // Substituir pela tua API Key
+        const FILE_ID = 'YOUR_FILE_ID'; // Substituir pelo ID do ficheiro XML
+
+        // Escopos necessários para a aplicação
+        const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+        let xmlDoc = null;
+
+        // Elementos da interface
+        const authorizeButton = document.getElementById('authorize_button');
+        const signoutButton = document.getElementById('signout_button');
+        const addItemSection = document.querySelector('.add-item');
+        const shoppingList = document.getElementById('shoppingList');
+
+        // Carregar a API do Google
+        function loadGapi() {
+            gapi.load('client:auth2', initClient);
+        }
+
+        // Inicializar o Cliente da API
+        function initClient() {
+            gapi.client.init({
+                apiKey: API_KEY,
+                clientId: CLIENT_ID,
+                discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"],
+                scope: SCOPES
+            }).then(() => {
+                // Escutar mudanças de estado de autenticação
+                gapi.auth2.getAuthInstance().isSignedIn.listen(updateSigninStatus);
+
+                // Atualizar o estado inicial
+                updateSigninStatus(gapi.auth2.getAuthInstance().isSignedIn.get());
+
+                // Configurar os botões de login/logout
+                authorizeButton.onclick = handleAuthClick;
+                signoutButton.onclick = handleSignoutClick;
+            }, (error) => {
+                console.error('Erro ao inicializar o cliente:', error);
+                alert('Erro ao inicializar a aplicação. Verifica o console para mais detalhes.');
+            });
+        }
+
+        // Atualizar a interface com base no estado de autenticação
+        function updateSigninStatus(isSignedIn) {
+            if (isSignedIn) {
+                authorizeButton.style.display = 'none';
+                signoutButton.style.display = 'block';
+                addItemSection.style.display = 'flex';
+                shoppingList.style.display = 'block';
+                loadXML();
+            } else {
+                authorizeButton.style.display = 'block';
+                signoutButton.style.display = 'none';
+                addItemSection.style.display = 'none';
+                shoppingList.style.display = 'none';
+            }
+        }
+
+        // Lidar com o clique no botão de autenticação
+        function handleAuthClick(event) {
+            gapi.auth2.getAuthInstance().signIn();
+        }
+
+        // Lidar com o clique no botão de sair
+        function handleSignoutClick(event) {
+            gapi.auth2.getAuthInstance().signOut();
+        }
+
+        // Carregar o ficheiro XML do Google Drive
+        async function loadXML() {
+            try {
+                const response = await gapi.client.drive.files.get({
+                    fileId: FILE_ID,
+                    alt: 'media'
+                });
+
+                const parser = new DOMParser();
+                xmlDoc = parser.parseFromString(response.body, "application/xml");
+                displayList();
+            } catch (error) {
+                console.error('Erro ao carregar o ficheiro:', error);
+                alert('Erro ao carregar a lista de compras. Verifica as permissões e a configuração da API.');
+            }
+        }
+
+        // Exibir a lista de compras na página
+        function displayList() {
+            if (!xmlDoc) return;
+
+            const list = shoppingList;
+            list.innerHTML = ''; // Limpar a lista existente
+
+            const items = xmlDoc.getElementsByTagName('item');
+
+            Array.from(items).forEach((item, index) => {
+                const nome = item.getElementsByTagName('nome')[0].textContent;
+                const feito = item.getElementsByTagName('feito')[0].textContent === 'true';
+
+                // Criar elementos HTML
+                const li = document.createElement('li');
+                li.className = feito ? 'feito' : '';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = feito;
+                checkbox.onchange = () => toggleFeito(index);
+
+                const span = document.createElement('span');
+                span.textContent = nome;
+                span.style.flex = '1';
+                span.style.marginLeft = '10px';
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = 'Apagar';
+                deleteBtn.className = 'btn delete';
+                deleteBtn.onclick = () => deleteItem(index);
+
+                // Adicionar elementos ao li
+                li.appendChild(checkbox);
+                li.appendChild(span);
+                li.appendChild(deleteBtn);
+
+                // Adicionar li à lista
+                list.appendChild(li);
+            });
+        }
+
+        // Adicionar um novo item
+        function addItem() {
+            const input = document.getElementById('newItemInput');
+            const nome = input.value.trim();
+
+            if (nome === '') {
+                alert('Por favor, insere o nome do item.');
+                return;
+            }
+
+            // Adicionar ao XML
+            const lista = xmlDoc.getElementsByTagName('lista')[0];
+            const novoItem = xmlDoc.createElement('item');
+
+            const nomeElem = xmlDoc.createElement('nome');
+            nomeElem.textContent = nome;
+
+            const feitoElem = xmlDoc.createElement('feito');
+            feitoElem.textContent = 'false';
+
+            novoItem.appendChild(nomeElem);
+            novoItem.appendChild(feitoElem);
+            lista.appendChild(novoItem);
+
+            // Atualizar a interface
+            displayList();
+            input.value = '';
+
+            // Feedback sonoro
+            playSound('add');
+
+            // Salvar no Google Drive
+            saveXML();
+        }
+
+        // Marcar ou desmarcar um item como feito
+        function toggleFeito(index) {
+            const items = xmlDoc.getElementsByTagName('item');
+            const item = items[index];
+            const feitoElem = item.getElementsByTagName('feito')[0];
+            const checkbox = document.querySelectorAll('#shoppingList li input[type="checkbox"]')[index];
+
+            feitoElem.textContent = checkbox.checked ? 'true' : 'false';
+
+            // Atualizar a interface
+            displayList();
+
+            // Feedback sonoro
+            playSound('toggle');
+
+            // Salvar no Google Drive
+            saveXML();
+        }
+
+        // Apagar um item com confirmação
+        function deleteItem(index) {
+            if (!confirm('Tem a certeza que deseja apagar este item?')) {
+                return;
+            }
+
+            const items = xmlDoc.getElementsByTagName('item');
+            const lista = xmlDoc.getElementsByTagName('lista')[0];
+            lista.removeChild(items[index]);
+
+            // Atualizar a interface
+            displayList();
+
+            // Feedback sonoro
+            playSound('delete');
+
+            // Salvar no Google Drive
+            saveXML();
+        }
+
+        // Salvar o XML atualizado no Google Drive
+        async function saveXML() {
+            try {
+                const serializer = new XMLSerializer();
+                const xmlString = serializer.serializeToString(xmlDoc);
+
+                const boundary = '-------314159265358979323846';
+                const delimiter = "\r\n--" + boundary + "\r\n";
+                const closeDelimiter = "\r\n--" + boundary + "--";
+
+                const contentType = 'application/xml';
+
+                const metadata = {
+                    'name': 'lista_de_compras.xml',
+                    'mimeType': contentType
+                };
+
+                const multipartRequestBody =
+                    delimiter +
+                    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+                    JSON.stringify(metadata) +
+                    delimiter +
+                    'Content-Type: ' + contentType + '\r\n\r\n' +
+                    xmlString +
+                    closeDelimiter;
+
+                const response = await gapi.client.request({
+                    'path': '/upload/drive/v3/files/' + FILE_ID,
+                    'method': 'PATCH',
+                    'params': { 'uploadType': 'multipart' },
+                    'headers': {
+                        'Content-Type': 'multipart/related; boundary=' + boundary
+                    },
+                    'body': multipartRequestBody
+                });
+
+                console.log('Ficheiro salvo com sucesso!', response);
+            } catch (error) {
+                console.error('Erro ao salvar o ficheiro:', error);
+                alert('Erro ao salvar a lista de compras. Verifica as permissões e a configuração da API.');
+            }
+        }
+
+        // Reproduzir feedback sonoro baseado na operação
+        function playSound(operation) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            let frequency;
+            switch(operation) {
+                case 'add':
+                    frequency = 440; // A4
+                    break;
+                case 'toggle':
+                    frequency = 523.25; // C5
+                    break;
+                case 'delete':
+                    frequency = 392; // G4
+                    break;
+                default:
+                    frequency = 440;
+            }
+
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.type = 'sine';
+            oscillator.frequency.value = frequency;
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); // Volume baixo
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.2); // Som curto
+        }
+
+        // Inicializar a aplicação ao carregar a página
+        window.onload = loadGapi;
+    </script>
+</body>
+</html>
+
